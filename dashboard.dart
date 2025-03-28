@@ -756,56 +756,99 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final daysOrder = [
-      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
-      'Friday', 'Saturday', 'Sunday'
+      'monday', 'tuesday', 'wednesday', 'thursday',
+      'friday', 'saturday', 'sunday'
     ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: daysOrder.map((day) {
-        final schedule = hours[day.toLowerCase()];
-        if (schedule == null) {
-          return _buildDaySchedule(day, 'Closed');
-        }
+      children: [
+        // Title
+        const Text(
+          'Operating Hours',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        
+        // Hours list
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Column(
+            children: daysOrder.map((day) {
+              final schedule = hours[day] as Map<String, dynamic>?;
+              
+              if (schedule == null) {
+                return _buildDaySchedule(day, 'Closed', true);
+              }
 
-        final openTime = schedule['open'] as String?;
-        final closeTime = schedule['close'] as String?;
+              final bool isClosed = schedule['isClosed'] as bool? ?? false;
+              final bool isOpen24Hours = schedule['isOpen24Hours'] as bool? ?? false;
+              final String openTime = schedule['openTime'] as String? ?? '';
+              final String closeTime = schedule['closeTime'] as String? ?? '';
 
-        if (openTime == null || closeTime == null) {
-          return _buildDaySchedule(day, 'Closed');
-        }
+              String displayText;
+              bool isClosedDay = false;
+              bool is24Hours = false;
 
-        return _buildDaySchedule(day, '$openTime - $closeTime');
-      }).toList(),
+              if (isClosed) {
+                displayText = 'Closed';
+                isClosedDay = true;
+              } else if (isOpen24Hours) {
+                displayText = 'Open 24 Hours';
+                is24Hours = true;
+              } else {
+                displayText = '$openTime - $closeTime';
+              }
+
+              return _buildDaySchedule(day, displayText, isClosedDay, is24Hours);
+            }).toList(),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildDaySchedule(String day, String schedule) {
-    final bool isToday = day == _getCurrentDay();
+  Widget _buildDaySchedule(String day, String schedule, bool isClosed, [bool is24Hours = false]) {
+    final bool isToday = day.toLowerCase() == _getCurrentDay().toLowerCase();
+    final String displayDay = day[0].toUpperCase() + day.substring(1);
     
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
       decoration: BoxDecoration(
-        color: isToday ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
-        borderRadius: BorderRadius.circular(8),
+        color: isToday ? Colors.blue.shade50 : null,
+        border: Border(
+          bottom: BorderSide(
+            color: Colors.grey.shade200,
+            width: 1,
+          ),
+        ),
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
-            day,
+            displayDay,
             style: TextStyle(
               fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-              color: isToday ? Theme.of(context).primaryColor : null,
+              color: isToday ? Theme.of(context).primaryColor : Colors.black87,
             ),
           ),
           Text(
             schedule,
             style: TextStyle(
               fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
-              color: schedule == 'Closed' 
+              color: isClosed 
                 ? Colors.red 
-                : (isToday ? Theme.of(context).primaryColor : null),
+                : (is24Hours 
+                  ? Colors.green 
+                  : (isToday ? Theme.of(context).primaryColor : Colors.black87)),
             ),
           ),
         ],
@@ -816,8 +859,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String _getCurrentDay() {
     final now = DateTime.now();
     final days = [
-      'Sunday', 'Monday', 'Tuesday', 'Wednesday',
-      'Thursday', 'Friday', 'Saturday'
+      'sunday', 'monday', 'tuesday', 'wednesday',
+      'thursday', 'friday', 'saturday'
     ];
     return days[now.weekday % 7];
   }
