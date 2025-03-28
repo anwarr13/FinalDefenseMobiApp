@@ -401,9 +401,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _markers.clear();
         _allBars = barSnapshot.docs;
-        _filteredBars = _allBars;
+        
+        // Filter bars based on selected features
+        if (_selectedFeatures != null && _selectedFeatures!.isNotEmpty) {
+          _filteredBars = _allBars.where((doc) {
+            final data = doc.data();
+            final List<dynamic> barFeatures = data['features'] as List<dynamic>? ?? [];
+            return _selectedFeatures!.any((feature) => barFeatures.contains(feature));
+          }).toList();
+        } else {
+          _filteredBars = _allBars;
+        }
 
-        for (var doc in barSnapshot.docs) {
+        // Only create markers for filtered bars
+        for (var doc in _filteredBars) {
           final data = doc.data();
           if (data['location'] != null) {
             final geoPoint = data['location'] as GeoPoint;
