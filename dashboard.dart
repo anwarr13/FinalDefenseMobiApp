@@ -756,8 +756,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
 
     final daysOrder = [
-      'monday', 'tuesday', 'wednesday', 'thursday',
-      'friday', 'saturday', 'sunday'
+      'sunday', 'monday', 'tuesday', 'wednesday',
+      'thursday', 'friday', 'saturday'
     ];
 
     return Column(
@@ -985,59 +985,160 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  void _performSearch(String query) {
+  void _performSearch(String query) async {
     setState(() {
       if (query.isEmpty) {
-        _filteredBars = _allBars;
-      } else {
-        _filteredBars = _allBars.where((bar) {
-          final data = bar.data();
-          if (data == null) return false;
+        _loadApprovedBars();
+        return;
+      }
+    });
 
-          final name = (data['barName'] ?? '').toString().toLowerCase();
-          final address = (data['streetAddress'] ?? '').toString().toLowerCase();
-          final description = (data['description'] ?? '').toString().toLowerCase();
-          final searchLower = query.toLowerCase();
+    try {
+      final QuerySnapshot<Map<String, dynamic>> searchResults = await _firestore
+          .collection('bars')
+          .where('status', isEqualTo: 'approved')
+          .get();
 
-          return name.contains(searchLower) ||
-              address.contains(searchLower) ||
-              description.contains(searchLower);
-        }).toList();
+      final List<DocumentSnapshot<Map<String, dynamic>>> matchingBars = searchResults.docs
+          .where((doc) {
+            final data = doc.data()!;
+            final String barName = (data['barName'] as String? ?? '').toLowerCase();
+            final String address = [
+              data['streetAddress'] as String? ?? '',
+              data['barangay'] as String? ?? '',
+              data['municipality'] as String? ?? '',
+              data['province'] as String? ?? '',
+            ].join(' ').toLowerCase();
+            
+            return barName.contains(query.toLowerCase()) ||
+                   address.contains(query.toLowerCase());
+          })
+          .toList();
+
+      if (matchingBars.isEmpty) {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (BuildContext context) {
+              return Dialog(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Container(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // UFO Icon
+                      Container(
+                        width: 120,
+                        height: 120,
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Icon(
+                            Icons.search_off_rounded,
+                            size: 60,
+                            color: Colors.blue.shade200,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // No Results Text
+                      const Text(
+                        'No results found',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Try searching for something else\nor in a different area',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      // Done Button
+                      SizedBox(
+                        width: double.infinity,
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            backgroundColor: Colors.blue,
+                          ),
+                          child: const Text(
+                            'Done',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        }
+        // Clear markers but keep user's location marker
+        setState(() {
+          _markers.removeWhere((marker) => marker.markerId.value != 'user_location');
+        });
+        return;
       }
 
-      // Update markers
-      _markers.clear();
-      for (var bar in _filteredBars) {
-        final data = bar.data();
-        if (data != null && data['location'] != null) {
-          try {
-            final geoPoint = data['location'] as GeoPoint;
-            final marker = Marker(
-              markerId: MarkerId(bar.id),
-              position: LatLng(geoPoint.latitude, geoPoint.longitude),
-              infoWindow: InfoWindow(
-                title: data['barName'] ?? 'Unknown Bar',
-                snippet: data['streetAddress'] ?? 'No address available'
+      // Update markers for matching bars
+      setState(() {
+        _markers.removeWhere((marker) => marker.markerId.value != 'user_location');
+        for (final doc in matchingBars) {
+          final data = doc.data()!;
+          final GeoPoint? location = data['location'] as GeoPoint?;
+          
+          if (location != null) {
+            final LatLng position = LatLng(location.latitude, location.longitude);
+            _markers.add(
+              Marker(
+                markerId: MarkerId(doc.id),
+                position: position,
+                infoWindow: InfoWindow(
+                  title: data['barName'] as String? ?? 'Unknown Bar',
+                  snippet: [
+                    data['streetAddress'] as String? ?? '',
+                    data['barangay'] as String? ?? '',
+                    data['municipality'] as String? ?? '',
+                  ].where((s) => s.isNotEmpty).join(', '),
+                ),
+                onTap: () => _showBarDetails(doc),
               ),
-              onTap: () => _showBarDetails(bar),
             );
-            _markers.add(marker);
-          } catch (e) {
-            print('Error creating marker for bar ${data['barName']}: $e');
           }
         }
-      }
+      });
 
-      // If there's exactly one result, show its details
-      if (_filteredBars.length == 1) {
-        _showBarDetails(_filteredBars.first);
-      }
-
-      // Fit map bounds to show all filtered markers
+      // Fit bounds to show all markers
       if (_markers.isNotEmpty) {
         _fitBoundsForMarkers();
       }
-    });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error performing search: $e')),
+        );
+      }
+    }
   }
 
   @override
