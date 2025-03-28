@@ -915,11 +915,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       } else {
         _filteredBars = _allBars.where((bar) {
           final data = bar.data();
+          if (data == null) return false;
+
           final name = (data['barName'] ?? '').toString().toLowerCase();
-          final address =
-              (data['streetAddress'] ?? '').toString().toLowerCase();
-          final description =
-              (data['description'] ?? '').toString().toLowerCase();
+          final address = (data['streetAddress'] ?? '').toString().toLowerCase();
+          final description = (data['description'] ?? '').toString().toLowerCase();
           final searchLower = query.toLowerCase();
 
           return name.contains(searchLower) ||
@@ -932,15 +932,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _markers.clear();
       for (var bar in _filteredBars) {
         final data = bar.data();
-        if (data['location'] != null) {
-          final geoPoint = data['location'] as GeoPoint;
-          final marker = Marker(
-            markerId: MarkerId(bar.id),
-            position: LatLng(geoPoint.latitude, geoPoint.longitude),
-            infoWindow: InfoWindow(title: data['barName']),
-            onTap: () => _showBarDetails(bar),
-          );
-          _markers.add(marker);
+        if (data != null && data['location'] != null) {
+          try {
+            final geoPoint = data['location'] as GeoPoint;
+            final marker = Marker(
+              markerId: MarkerId(bar.id),
+              position: LatLng(geoPoint.latitude, geoPoint.longitude),
+              infoWindow: InfoWindow(
+                title: data['barName'] ?? 'Unknown Bar',
+                snippet: data['streetAddress'] ?? 'No address available'
+              ),
+              onTap: () => _showBarDetails(bar),
+            );
+            _markers.add(marker);
+          } catch (e) {
+            print('Error creating marker for bar ${data['barName']}: $e');
+          }
         }
       }
 
