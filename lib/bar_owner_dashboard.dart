@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:login_form/login_screen.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'screens/update_bar_location_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class BarOwnerDashboard extends StatefulWidget {
   const BarOwnerDashboard({super.key});
@@ -11,6 +14,11 @@ class BarOwnerDashboard extends StatefulWidget {
 
 class _BarOwnerDashboardState extends State<BarOwnerDashboard> {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  String _barName = '';
+  String _barId = '';
+  LatLng? _barLocation;
+  bool _isLoading = true;
 
   Future<void> _signOut() async {
     try {
@@ -59,6 +67,59 @@ class _BarOwnerDashboardState extends State<BarOwnerDashboard> {
         );
       },
     );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBarData();
+  }
+
+  Future<void> _loadBarData() async {
+    setState(() => _isLoading = true);
+    try {
+      final user = _auth.currentUser;
+      if (user != null) {
+        final barDoc = await _firestore.collection('bars').doc(user.uid).get();
+        if (barDoc.exists) {
+          final data = barDoc.data()!;
+          setState(() {
+            _barName = data['barName'] ?? '';
+            _barId = barDoc.id;
+            if (data['location'] != null) {
+              final geoPoint = data['location'] as GeoPoint;
+              _barLocation = LatLng(geoPoint.latitude, geoPoint.longitude);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading bar data: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _updateLocation() async {
+    if (_barLocation == null) {
+      // Use a default location (e.g., city center) if no location is set
+      _barLocation = const LatLng(7.7844, 122.5872); // Ipil, Zamboanga Sibugay
+    }
+
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => UpdateBarLocationScreen(
+          barId: _barId,
+          initialLocation: _barLocation!,
+        ),
+      ),
+    );
+
+    if (result == true) {
+      // Reload bar data to get the updated location
+      await _loadBarData();
+    }
   }
 
   @override
@@ -156,9 +217,7 @@ class _BarOwnerDashboardState extends State<BarOwnerDashboard> {
                       _buildActionCard(
                         icon: Icons.edit_location_alt,
                         title: 'Update Location',
-                        onTap: () {
-                          // TODO: Implement location update
-                        },
+                        onTap: _updateLocation,
                       ),
                       _buildActionCard(
                         icon: Icons.analytics,

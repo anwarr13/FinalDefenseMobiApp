@@ -15,6 +15,8 @@ import 'package:location/location.dart' as loc;
 import 'package:geolocator/geolocator.dart';
 import 'login_screen.dart';
 import 'dart:math';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'widgets/bar_reviews_section.dart';
 
 class DashboardScreen extends StatefulWidget {
   final List<String>? selectedFeatures;
@@ -42,6 +44,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
   bool _isPanelVisible = false;
   double _panelHeightOpen = 0;
   double _panelHeightClosed = 0;
+  LatLng? _currentPosition; // Add this line to track user's current position
+  bool _isLoading = false; // Add this line if not already present
 
   // Add search controller
   final TextEditingController _searchController = TextEditingController();
@@ -50,7 +54,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   FirebaseFirestore _firestore = FirebaseFirestore.instance;
   Set<Marker> _markers = {};
-  bool _isLoading = false;
   List<String>? _selectedFeatures;
   // Initial camera position (Ipil, Zamboanga Sibugay - centered on downtown)
   static const CameraPosition _kGooglePlex = CameraPosition(
@@ -239,8 +242,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  LatLng? _currentPosition;
-
   void _centerOnUserLocation() async {
     try {
       final loc.LocationData? currentLocation =
@@ -349,33 +350,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
     bool _serviceEnabled;
     loc.PermissionStatus _permissionGranted;
 
-    _serviceEnabled = await _locationController.serviceEnabled();
-    if (!_serviceEnabled) {
-      _serviceEnabled = await _locationController.requestService();
+    try {
+      _serviceEnabled = await _locationController.serviceEnabled();
       if (!_serviceEnabled) {
-        return;
+        _serviceEnabled = await _locationController.requestService();
+        if (!_serviceEnabled) {
+          return;
+        }
       }
-    }
 
-    _permissionGranted = await _locationController.hasPermission();
-    if (_permissionGranted == loc.PermissionStatus.denied) {
-      _permissionGranted = await _locationController.requestPermission();
-      if (_permissionGranted != loc.PermissionStatus.granted) {
-        return;
+      _permissionGranted = await _locationController.hasPermission();
+      if (_permissionGranted == loc.PermissionStatus.denied) {
+        _permissionGranted = await _locationController.requestPermission();
+        if (_permissionGranted != loc.PermissionStatus.granted) {
+          return;
+        }
       }
-    }
 
-    _locationController.onLocationChanged
-        .listen((loc.LocationData currentLocation) {
-      if (currentLocation.latitude != null &&
-          currentLocation.longitude != null) {
+      // Get initial location
+      final initialLocation = await _locationController.getLocation();
+      if (initialLocation.latitude != null && initialLocation.longitude != null) {
         setState(() {
-          _currentPosition =
-              LatLng(currentLocation.latitude!, currentLocation.longitude!);
+          _currentPosition = LatLng(initialLocation.latitude!, initialLocation.longitude!);
         });
-        print(_currentPosition);
       }
-    });
+
+      // Listen for location updates
+      _locationController.onLocationChanged.listen((loc.LocationData currentLocation) {
+        if (currentLocation.latitude != null && currentLocation.longitude != null) {
+          setState(() {
+            _currentPosition = LatLng(currentLocation.latitude!, currentLocation.longitude!);
+          });
+        }
+      });
+    } catch (e) {
+      print('Error getting location: $e');
+    }
   }
 
   void _showBarDetails(DocumentSnapshot<Map<String, dynamic>> bar) {
@@ -406,7 +416,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (_selectedFeatures != null && _selectedFeatures!.isNotEmpty) {
           _filteredBars = _allBars.where((doc) {
             final data = doc.data();
-            final List<dynamic> barFeatures = data['features'] as List<dynamic>? ?? [];
+            if (data == null) return false;
+            
+            final features = data['features'];
+            if (features == null) return false;
+            
+            final List<String> barFeatures = (features as List<dynamic>).map((e) => e.toString()).toList();
             return _selectedFeatures!.any((feature) => barFeatures.contains(feature));
           }).toList();
         } else {
@@ -416,15 +431,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         // Only create markers for filtered bars
         for (var doc in _filteredBars) {
           final data = doc.data();
-          if (data['location'] != null) {
-            final geoPoint = data['location'] as GeoPoint;
-            final marker = Marker(
-              markerId: MarkerId(doc.id),
-              position: LatLng(geoPoint.latitude, geoPoint.longitude),
-              infoWindow: InfoWindow(title: data['barName']),
-              onTap: () => _showBarDetails(doc),
-            );
-            _markers.add(marker);
+          if (data != null && data['location'] != null) {
+            try {
+              final geoPoint = data['location'] as GeoPoint;
+              final marker = Marker(
+                markerId: MarkerId(doc.id),
+                position: LatLng(geoPoint.latitude, geoPoint.longitude),
+                infoWindow: InfoWindow(title: data['barName'] ?? 'Unknown Bar'),
+                onTap: () => _showBarDetails(doc),
+              );
+              _markers.add(marker);
+            } catch (e) {
+              print('Error creating marker for bar ${data['barName']}: $e');
+            }
           }
         }
       });
@@ -495,6 +514,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final Map<String, dynamic> operatingHours =
         data['operatingHours'] as Map<String, dynamic>? ?? {};
     final List<dynamic> features = data['features'] as List<dynamic>? ?? [];
+    final double averageRating = (data['averageRating'] as num?)?.toDouble() ?? 0.0;
+    final int reviewCount = (data['reviewCount'] as num?)?.toInt() ?? 0;
 
     return Container(
       decoration: BoxDecoration(
@@ -519,10 +540,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Handle bar
+                // Handle bar at the top
                 Center(
                   child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 12),
+                    margin: const EdgeInsets.only(top: 12),
                     width: 40,
                     height: 4,
                     decoration: BoxDecoration(
@@ -531,170 +552,152 @@ class _DashboardScreenState extends State<DashboardScreen> {
                     ),
                   ),
                 ),
-                // Close button
-                Align(
-                  alignment: Alignment.topRight,
-                  child: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: _hideBarDetails,
-                  ),
-                ),
-                // Bar content
+
+                // Bar name and rating
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      // Bar Image
-                      if (data['profileImagePath'] != null)
-                        Container(
-                          height: 200,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            image: DecorationImage(
-                              image: NetworkImage(
-                                  data['profileImagePath'] as String),
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                        ),
-                      const SizedBox(height: 16),
-                      // Bar Name
-                      Text(
-                        data['barName'] as String? ?? 'Unknown Bar',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Handlee',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Rating and Review Count
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${(data['rating'] as num? ?? 0.0).toStringAsFixed(1)}',
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '(${data['reviewCount'] as int? ?? 0} reviews)',
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Description
-                      Text(
-                        data['description'] as String? ??
-                            'No description available',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Address
-                      _buildInfoRow(
-                        Icons.location_on,
-                        [
-                          data['streetAddress'] as String?,
-                          data['barangay'] as String?,
-                          data['municipality'] as String?,
-                          data['province'] as String?,
-                        ].where((s) => s != null && s.isNotEmpty).join(', '),
-                      ),
-                      const SizedBox(height: 16),
-                      // Operating Hours
-                      _buildOperatingHours(operatingHours),
-                      const SizedBox(height: 16),
-                      // Contact Number
-                      _buildInfoRow(
-                        Icons.phone,
-                        data['contactNumber'] as String? ??
-                            'No contact number available',
-                      ),
-                      const SizedBox(height: 16),
-                      // Features
-                      if (features.isNotEmpty) ...[
-                        const Text(
-                          'Features',
-                          style: TextStyle(
-                            fontSize: 18,
+                      Expanded(
+                        child: Text(
+                          data['barName'] ?? 'Unknown Bar',
+                          style: const TextStyle(
+                            fontSize: 24,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: features.map((feature) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Row(
+                            children: [
+                              RatingBarIndicator(
+                                rating: averageRating,
+                                itemBuilder: (context, _) => const Icon(
+                                  Icons.star,
+                                  color: Colors.amber,
+                                ),
+                                itemCount: 5,
+                                itemSize: 20,
                               ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .primaryColor
-                                    .withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Theme.of(context)
-                                      .primaryColor
-                                      .withOpacity(0.3),
+                              const SizedBox(width: 8),
+                              Text(
+                                averageRating.toStringAsFixed(1),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                 ),
                               ),
-                              child: Text(
-                                feature.toString(),
-                                style: TextStyle(
-                                  color: Theme.of(context).primaryColor,
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      ],
-                      const SizedBox(height: 24),
-                      // Get Directions Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            if (data['location'] != null) {
-                              final GeoPoint geoPoint =
-                                  data['location'] as GeoPoint;
-                              final LatLng location = LatLng(
-                                geoPoint.latitude,
-                                geoPoint.longitude,
-                              );
-                              _showDirectionsDialog(
-                                  location, data['barName'] as String? ?? '');
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            ],
                           ),
-                          child: const Text(
-                            'Get Directions',
+                          Text(
+                            '$reviewCount ${reviewCount == 1 ? 'review' : 'reviews'}',
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.grey[600],
+                              fontSize: 12,
                             ),
                           ),
-                        ),
+                        ],
                       ),
                     ],
                   ),
                 ),
+
+                // Existing content (address, description, etc.)
+                // Bar Image
+                if (data['profileImagePath'] != null)
+                  Container(
+                    height: 200,
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(12),
+                      image: DecorationImage(
+                        image: NetworkImage(
+                            data['profileImagePath'] as String),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 16),
+                // Address
+                _buildInfoRow(
+                  Icons.location_on,
+                  [
+                    data['streetAddress'] as String?,
+                    data['barangay'] as String?,
+                    data['municipality'] as String?,
+                    data['province'] as String?,
+                  ].where((s) => s != null && s.isNotEmpty).join(', '),
+                ),
+                const SizedBox(height: 16),
+                // Description
+                Text(
+                  data['description'] as String? ??
+                      'No description available',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.grey[800],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                // Operating Hours
+                _buildOperatingHours(operatingHours),
+                const SizedBox(height: 16),
+                // Contact Number
+                _buildInfoRow(
+                  Icons.phone,
+                  data['contactNumber'] as String? ??
+                      'No contact number available',
+                ),
+                const SizedBox(height: 16),
+                // Features
+                if (features.isNotEmpty) ...[
+                  const Text(
+                    'Features',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: features.map((feature) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .primaryColor
+                                .withOpacity(0.3),
+                          ),
+                        ),
+                        child: Text(
+                          feature.toString(),
+                          style: TextStyle(
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+                const SizedBox(height: 16),
+
+                // Reviews section
+                BarReviewsSection(barId: _selectedBar!.id),
+
+                const SizedBox(height: 100), // Bottom padding for content
               ],
             ),
           ),
@@ -897,12 +900,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _filteredBars = _allBars;
       } else {
         _filteredBars = _allBars.where((bar) {
-          final data = bar.data()!;
+          final data = bar.data();
+          if (data == null) return false;
+
           final name = (data['barName'] ?? '').toString().toLowerCase();
-          final address =
-              (data['streetAddress'] ?? '').toString().toLowerCase();
-          final description =
-              (data['description'] ?? '').toString().toLowerCase();
+          final address = (data['streetAddress'] ?? '').toString().toLowerCase();
+          final description = (data['description'] ?? '').toString().toLowerCase();
           final searchLower = query.toLowerCase();
 
           return name.contains(searchLower) ||
@@ -914,16 +917,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Update markers
       _markers.clear();
       for (var bar in _filteredBars) {
-        final data = bar.data()!;
-        if (data['location'] != null) {
-          final geoPoint = data['location'] as GeoPoint;
-          final marker = Marker(
-            markerId: MarkerId(bar.id),
-            position: LatLng(geoPoint.latitude, geoPoint.longitude),
-            infoWindow: InfoWindow(title: data['barName']),
-            onTap: () => _showBarDetails(bar),
-          );
-          _markers.add(marker);
+        final data = bar.data();
+        if (data != null && data['location'] != null) {
+          try {
+            final geoPoint = data['location'] as GeoPoint;
+            final marker = Marker(
+              markerId: MarkerId(bar.id),
+              position: LatLng(geoPoint.latitude, geoPoint.longitude),
+              infoWindow: InfoWindow(
+                title: data['barName'] ?? 'Unknown Bar',
+                snippet: data['streetAddress'] ?? 'No address available'
+              ),
+              onTap: () => _showBarDetails(bar),
+            );
+            _markers.add(marker);
+          } catch (e) {
+            print('Error creating marker for bar ${data['barName']}: $e');
+          }
         }
       }
 

@@ -88,6 +88,20 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
           },
         });
 
+        // Send approval email to bar owner
+        if (userEmail != null) {
+          try {
+            await _emailService.sendApprovalEmail(
+              recipientEmail: userEmail,
+              barName: barData['barName'] ?? 'Your Bar',
+              ownerName: ownerName,
+            );
+          } catch (emailError) {
+            print('Failed to send approval email: $emailError');
+            // Don't show error to admin as the main approval process succeeded
+          }
+        }
+
         // Update user status
         await _firestore.collection('users').doc(userId).update({
           'approved': true,
@@ -125,20 +139,6 @@ class _SuperAdminDashboardState extends State<SuperAdminDashboard> {
         _mapController?.animateCamera(
           CameraUpdate.newLatLngZoom(location, 15),
         );
-
-        // Send email notification
-        if (userEmail != null) {
-          try {
-            await _emailService.sendApprovalEmail(
-              recipientEmail: userEmail,
-              barName: barData['barName'] ?? 'Your Bar',
-              ownerName: ownerName,
-            );
-          } catch (e) {
-            print('Error sending approval email: $e');
-            // Don't stop the approval process if email fails
-          }
-        }
 
         // Send detailed approval notification
         await _notificationService.sendNotification(
@@ -227,6 +227,7 @@ Need help? Contact our support team anytime.''',
       length: 3,
       child: Scaffold(
         appBar: AppBar(
+          automaticallyImplyLeading: false,
           title: const Text(
             'LGU Dashboard',
             style: TextStyle(
