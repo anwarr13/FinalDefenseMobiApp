@@ -512,7 +512,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     final data = _selectedBar!.data()!;
     final Map<String, dynamic> operatingHours =
-        data['operatingHours'] as Map<String, dynamic>? ?? {};
+        (data['operatingHours'] as Map<String, dynamic>?) ?? {};
     final List<dynamic> features = data['features'] as List<dynamic>? ?? [];
     final double averageRating = (data['averageRating'] as num?)?.toDouble() ?? 0.0;
     final int reviewCount = (data['reviewCount'] as num?)?.toInt() ?? 0;
@@ -660,14 +660,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         const SizedBox(height: 16),
 
                         // Operating Hours
-                        const Text(
-                          'Operating Hours',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
                         _buildOperatingHours(operatingHours),
                         const SizedBox(height: 16),
 
@@ -759,71 +751,75 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildOperatingHours(Map<String, dynamic> hours) {
-    if (hours.isEmpty)
-      return _buildInfoRow(Icons.access_time, 'Hours not specified');
+    if (hours.isEmpty) {
+      return const Text('Operating hours not available');
+    }
+
+    final daysOrder = [
+      'Monday', 'Tuesday', 'Wednesday', 'Thursday',
+      'Friday', 'Saturday', 'Sunday'
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Icon(Icons.access_time, color: Colors.grey[600], size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Operating Hours',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey[800],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ...[
-          'Monday',
-          'Tuesday',
-          'Wednesday',
-          'Thursday',
-          'Friday',
-          'Saturday',
-          'Sunday'
-        ].map((day) {
-          final schedule = hours[day.toLowerCase()] as Map<String, dynamic>?;
-          if (schedule == null) return const SizedBox.shrink();
+      children: daysOrder.map((day) {
+        final schedule = hours[day.toLowerCase()];
+        if (schedule == null) {
+          return _buildDaySchedule(day, 'Closed');
+        }
 
-          return Padding(
-            padding: const EdgeInsets.only(left: 28, bottom: 4),
-            child: Row(
-              children: [
-                SizedBox(
-                  width: 80,
-                  child: Text(
-                    day.substring(0, 3), // Show first 3 letters of day
-                    style: TextStyle(
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey[700],
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    schedule['closed'] == true
-                        ? 'Closed'
-                        : '${schedule['open'] ?? 'N/A'} - ${schedule['close'] ?? 'N/A'}',
-                    style: TextStyle(
-                      color: schedule['closed'] == true
-                          ? Colors.red
-                          : Colors.grey[800],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }).toList(),
-      ],
+        final openTime = schedule['open'] as String?;
+        final closeTime = schedule['close'] as String?;
+
+        if (openTime == null || closeTime == null) {
+          return _buildDaySchedule(day, 'Closed');
+        }
+
+        return _buildDaySchedule(day, '$openTime - $closeTime');
+      }).toList(),
     );
+  }
+
+  Widget _buildDaySchedule(String day, String schedule) {
+    final bool isToday = day == _getCurrentDay();
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      decoration: BoxDecoration(
+        color: isToday ? Theme.of(context).primaryColor.withOpacity(0.1) : null,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            day,
+            style: TextStyle(
+              fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+              color: isToday ? Theme.of(context).primaryColor : null,
+            ),
+          ),
+          Text(
+            schedule,
+            style: TextStyle(
+              fontWeight: isToday ? FontWeight.bold : FontWeight.normal,
+              color: schedule == 'Closed' 
+                ? Colors.red 
+                : (isToday ? Theme.of(context).primaryColor : null),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _getCurrentDay() {
+    final now = DateTime.now();
+    final days = [
+      'Sunday', 'Monday', 'Tuesday', 'Wednesday',
+      'Thursday', 'Friday', 'Saturday'
+    ];
+    return days[now.weekday % 7];
   }
 
   Widget _buildInfoRow(IconData icon, String text) {
