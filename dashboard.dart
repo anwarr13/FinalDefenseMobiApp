@@ -65,8 +65,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String displayName = '';
   MapType _currentMapType = MapType.hybrid;
 
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _barSubscription;
-
   void onMapCreated(GoogleMapController controller) async {
     setState(() {
       mapController = controller;
@@ -95,7 +93,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   void dispose() {
     _userSubscription?.cancel();
-    _barSubscription?.cancel();
     //  _searchController.dispose();
     super.dispose();
   }
@@ -391,50 +388,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  void _showBarDetails(DocumentSnapshot<Map<String, dynamic>> bar) async {
-    if (!mounted) return;
-
-    try {
-      // Get real-time updates for the bar data
-      final barStream = FirebaseFirestore.instance
-          .collection('bars')
-          .doc(bar.id)
-          .snapshots();
-
-      setState(() {
-        _selectedBar = bar;
-        _isPanelVisible = true;
-      });
-
-      // Subscribe to real-time updates
-      _barSubscription?.cancel();
-      _barSubscription = barStream.listen(
-        (updatedBar) {
-          if (mounted && updatedBar.exists) {
-            setState(() => _selectedBar = updatedBar);
-          }
-        },
-        onError: (e) {
-          print('Error getting bar updates: $e');
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading bar details: $e')),
-        );
-      }
-    }
-  }
-
-  void _hideBarDetails() {
-    _barSubscription?.cancel();
-    if (mounted) {
-      setState(() {
-        _selectedBar = null;
-        _isPanelVisible = false;
-      });
-    }
+  void _showBarDetails(DocumentSnapshot<Map<String, dynamic>> bar) {
+    setState(() {
+      _selectedBar = bar;
+      _isPanelVisible = true;
+    });
+    _panelController.open();
   }
 
   Future<void> _loadApprovedBars() async {
@@ -534,6 +493,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ),
       ),
     );
+  }
+
+  void _hideBarDetails() {
+    _panelController.close();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) {
+        setState(() {
+          _selectedBar = null;
+          _isPanelVisible = false;
+        });
+      }
+    });
   }
 
   Widget _buildBarDetailsPanel() {
