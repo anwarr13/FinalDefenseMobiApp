@@ -15,6 +15,8 @@ import 'package:location/location.dart' as loc;
 import 'package:geolocator/geolocator.dart';
 import 'login_screen.dart';
 import 'dart:math';
+import 'package:flutter_rating_bar/flutter_rating_bar.dart';
+import 'widgets/bar_reviews_section.dart';
 
 class DashboardScreen extends StatefulWidget {
   final List<String>? selectedFeatures;
@@ -512,6 +514,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final Map<String, dynamic> operatingHours =
         data['operatingHours'] as Map<String, dynamic>? ?? {};
     final List<dynamic> features = data['features'] as List<dynamic>? ?? [];
+    final double averageRating = (data['averageRating'] as num?)?.toDouble() ?? 0.0;
+    final int reviewCount = (data['reviewCount'] as num?)?.toInt() ?? 0;
 
     return Container(
       decoration: BoxDecoration(
@@ -529,190 +533,224 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
         ],
       ),
-      child: Stack(
+      child: Column(
         children: [
-          SingleChildScrollView(
-            physics: const ClampingScrollPhysics(),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          // Handle and close button
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Stack(
+              alignment: Alignment.center,
               children: [
                 // Handle bar
-                Center(
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 12),
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
                 // Close button
                 Align(
-                  alignment: Alignment.topRight,
+                  alignment: Alignment.centerRight,
                   child: IconButton(
                     icon: const Icon(Icons.close),
                     onPressed: _hideBarDetails,
                   ),
                 ),
-                // Bar content
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Bar Image
-                      if (data['profileImagePath'] != null)
-                        Container(
-                          height: 200,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            image: DecorationImage(
-                              image: NetworkImage(
-                                  data['profileImagePath'] as String),
-                              fit: BoxFit.cover,
+              ],
+            ),
+          ),
+
+          // Scrollable content
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Bar image
+                  if (data['profileImagePath'] != null)
+                    Container(
+                      height: 200,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: NetworkImage(data['profileImagePath'] as String),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+
+                  // Bar name and rating
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                data['barName'] ?? 'Unknown Bar',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Row(
+                                  children: [
+                                    RatingBarIndicator(
+                                      rating: averageRating,
+                                      itemBuilder: (context, _) => const Icon(
+                                        Icons.star,
+                                        color: Colors.amber,
+                                      ),
+                                      itemCount: 5,
+                                      itemSize: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      averageRating.toStringAsFixed(1),
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  '$reviewCount ${reviewCount == 1 ? 'review' : 'reviews'}',
+                                  style: TextStyle(
+                                    color: Colors.grey[600],
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Address
+                        _buildInfoRow(
+                          Icons.location_on,
+                          [
+                            data['streetAddress'] as String?,
+                            data['barangay'] as String?,
+                            data['municipality'] as String?,
+                            data['province'] as String?,
+                          ].where((s) => s != null && s.isNotEmpty).join(', '),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Description
+                        Text(
+                          data['description'] ?? 'No description available',
+                          style: TextStyle(
+                            fontSize: 16,
+                            color: Colors.grey[800],
                           ),
                         ),
-                      const SizedBox(height: 16),
-                      // Bar Name
-                      Text(
-                        data['barName'] as String? ?? 'Unknown Bar',
-                        style: const TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          fontFamily: 'Handlee',
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Rating and Review Count
-                      Row(
-                        children: [
-                          const Icon(Icons.star, color: Colors.amber),
-                          const SizedBox(width: 4),
-                          Text(
-                            '${(data['rating'] as num? ?? 0.0).toStringAsFixed(1)}',
-                            style: const TextStyle(fontSize: 16),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            '(${data['reviewCount'] as int? ?? 0} reviews)',
-                            style: TextStyle(color: Colors.grey[600]),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      // Description
-                      Text(
-                        data['description'] as String? ??
-                            'No description available',
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      // Address
-                      _buildInfoRow(
-                        Icons.location_on,
-                        [
-                          data['streetAddress'] as String?,
-                          data['barangay'] as String?,
-                          data['municipality'] as String?,
-                          data['province'] as String?,
-                        ].where((s) => s != null && s.isNotEmpty).join(', '),
-                      ),
-                      const SizedBox(height: 16),
-                      // Operating Hours
-                      _buildOperatingHours(operatingHours),
-                      const SizedBox(height: 16),
-                      // Contact Number
-                      _buildInfoRow(
-                        Icons.phone,
-                        data['contactNumber'] as String? ??
-                            'No contact number available',
-                      ),
-                      const SizedBox(height: 16),
-                      // Features
-                      if (features.isNotEmpty) ...[
+                        const SizedBox(height: 16),
+
+                        // Operating Hours
                         const Text(
-                          'Features',
+                          'Operating Hours',
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: features.map((feature) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context)
-                                    .primaryColor
-                                    .withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Theme.of(context)
-                                      .primaryColor
-                                      .withOpacity(0.3),
-                                ),
-                              ),
-                              child: Text(
-                                feature.toString(),
-                                style: TextStyle(
-                                  color: Theme.of(context).primaryColor,
-                                ),
-                              ),
-                            );
-                          }).toList(),
+                        _buildOperatingHours(operatingHours),
+                        const SizedBox(height: 16),
+
+                        // Contact Number
+                        _buildInfoRow(
+                          Icons.phone,
+                          data['contactNumber'] ?? 'No contact number available',
                         ),
-                      ],
-                      const SizedBox(height: 24),
-                      // Get Directions Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            if (data['location'] != null) {
-                              final GeoPoint geoPoint =
-                                  data['location'] as GeoPoint;
-                              final LatLng location = LatLng(
-                                geoPoint.latitude,
-                                geoPoint.longitude,
-                              );
-                              _showDirectionsDialog(
-                                  location, data['barName'] as String? ?? '');
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
-                            'Get Directions',
+                        const SizedBox(height: 16),
+
+                        // Features
+                        if (features.isNotEmpty) ...[
+                          const Text(
+                            'Features',
                             style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
+                              fontSize: 18,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          const SizedBox(height: 8),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: features.map((feature) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).primaryColor.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(
+                                    color: Theme.of(context).primaryColor.withOpacity(0.3),
+                                  ),
+                                ),
+                                child: Text(
+                                  feature.toString(),
+                                  style: TextStyle(
+                                    color: Theme.of(context).primaryColor,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
+
+                        // Get Directions Button
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              if (data['location'] != null) {
+                                final GeoPoint geoPoint = data['location'] as GeoPoint;
+                                final LatLng location = LatLng(
+                                  geoPoint.latitude,
+                                  geoPoint.longitude,
+                                );
+                                _showDirectionsDialog(location, data['barName'] ?? '');
+                              }
+                            },
+                            icon: const Icon(Icons.directions),
+                            label: const Text('Get Directions'),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.all(16),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 16),
+
+                        // Reviews section
+                        BarReviewsSection(barId: _selectedBar!.id),
+
+                        const SizedBox(height: 32),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],
